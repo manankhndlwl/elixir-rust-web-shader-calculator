@@ -62,39 +62,48 @@ function RustCalculator() {
 
 function TextToShader() {
   const [prompt, setPrompt] = useState("");
-  const [shaderCode, setShaderCode] = useState("");
+  const [shaderCode, setShaderCode] = useState({
+    vertexShader: "",
+    fragmentShader: "",
+  });
   const [error, setError] = useState("");
   const canvasRef = useRef();
 
-  const renderShader = (code) => {
+  const renderShader = (shaders) => {
     try {
       const gl = canvasRef.current.getContext("webgl");
-      const vertexShaderSource = `
-        attribute vec4 position;
-        void main() {
-          gl_Position = position;
-        }
-      `;
-      const fragmentShaderSource = code;
 
+      // Create vertex shader
       const vs = gl.createShader(gl.VERTEX_SHADER);
-      gl.shaderSource(vs, vertexShaderSource);
+      gl.shaderSource(vs, shaders.vertexShader);
       gl.compileShader(vs);
-
-      const fs = gl.createShader(gl.FRAGMENT_SHADER);
-      gl.shaderSource(fs, fragmentShaderSource);
-      gl.compileShader(fs);
-
-      if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
-        throw new Error(gl.getShaderInfoLog(fs));
+      if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) {
+        throw new Error("Vertex shader error: " + gl.getShaderInfoLog(vs));
       }
 
+      // Create fragment shader
+      const fs = gl.createShader(gl.FRAGMENT_SHADER);
+      gl.shaderSource(fs, shaders.fragmentShader);
+      gl.compileShader(fs);
+      if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
+        throw new Error("Fragment shader error: " + gl.getShaderInfoLog(fs));
+      }
+
+      // Create and link program
       const program = gl.createProgram();
       gl.attachShader(program, vs);
       gl.attachShader(program, fs);
       gl.linkProgram(program);
+
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        throw new Error(
+          "Shader program error: " + gl.getProgramInfoLog(program)
+        );
+      }
+
       gl.useProgram(program);
 
+      // Set up geometry
       const vertices = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
       const buffer = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
@@ -103,6 +112,10 @@ function TextToShader() {
       const pos = gl.getAttribLocation(program, "position");
       gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
       gl.enableVertexAttribArray(pos);
+
+      // Clear and draw
+      gl.clearColor(0, 0, 0, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     } catch (err) {
       setError("Failed to render shader: " + err.message);
@@ -111,19 +124,22 @@ function TextToShader() {
 
   const handleSubmit = async () => {
     setError("");
-    setShaderCode("");
+    setShaderCode({ vertexShader: "", fragmentShader: "" });
     try {
-      const res = await fetch("http://localhost:4000/generate-shader", {
+      const res = await fetch("http://localhost:4000/api/shader/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt }),
       });
       const data = await res.json();
-      if (data.shader) {
-        setShaderCode(data.shader);
-        renderShader(data.shader);
+
+      if (data.success && data.shader_code) {
+        // Parse the shader_code string as JSON
+        const shaders = JSON.parse(data.shader_code);
+        setShaderCode(shaders);
+        renderShader(shaders);
       } else {
-        throw new Error("No shader returned");
+        throw new Error("Invalid shader response");
       }
     } catch (err) {
       setError(err.message);
@@ -151,15 +167,26 @@ function TextToShader() {
         style={{ border: "1px solid #ccc" }}
       />
 
-      <h3>Shader Code:</h3>
+      <h3>Vertex Shader:</h3>
       <pre
         style={{
           whiteSpace: "pre-wrap",
-          background: "#f0f0f0",
+          //background: "#f0f0f0",
           padding: "1rem",
         }}
       >
-        {shaderCode}
+        {shaderCode.vertexShader}
+      </pre>
+
+      <h3>Fragment Shader:</h3>
+      <pre
+        style={{
+          whiteSpace: "pre-wrap",
+          //background: "#f0f0f0",
+          padding: "1rem",
+        }}
+      >
+        {shaderCode.fragmentShader}
       </pre>
 
       {error && <p style={{ color: "red" }}>Error: {error}</p>}
