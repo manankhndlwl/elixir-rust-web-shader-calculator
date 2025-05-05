@@ -144,11 +144,14 @@ function TextToShader() {
     setError("");
     setShaderCode({ vertexShader: "", fragmentShader: "" });
     try {
-      const res = await fetch("http://localhost:4000/api/shader/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
-      });
+      const res = await fetch(
+        "https://elixir-rust-web-shader-calculator.onrender.com/api/shader/generate",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ prompt }),
+        }
+      );
       const data = await res.json();
       console.log("data====>", data);
       if (data.success && data.shader_code) {
