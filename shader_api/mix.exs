@@ -38,7 +38,8 @@ defmodule ShaderApi.MixProject do
       {:jason, "~> 1.2"},
       {:bandit, "~> 1.5"},
       {:httpoison, "~> 2.0"},
-      {:cors_plug, "~> 3.0"}
+      {:cors_plug, "~> 3.0"},
+      {:dotenv, "~> 3.0.0"}
     ]
   end
 

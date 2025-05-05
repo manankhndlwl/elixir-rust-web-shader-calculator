@@ -25,3 +25,5 @@ erl_crash.dump
 # Ignore package tarball (built via "mix hex.build").
 shader_api-*.tar
 
+# Ignore .env file
+.env

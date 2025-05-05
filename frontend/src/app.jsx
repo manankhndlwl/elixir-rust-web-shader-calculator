@@ -72,6 +72,9 @@ function TextToShader() {
   const renderShader = (shaders) => {
     try {
       const gl = canvasRef.current.getContext("webgl");
+      if (!gl) {
+        throw new Error("WebGL not supported");
+      }
 
       // Create vertex shader
       const vs = gl.createShader(gl.VERTEX_SHADER);
@@ -103,21 +106,36 @@ function TextToShader() {
 
       gl.useProgram(program);
 
-      // Set up geometry
-      const vertices = new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]);
+      // Set up geometry for a triangle
+      const vertices = new Float32Array([
+        -0.5,
+        -0.5, // bottom left
+        0.5,
+        -0.5, // bottom right
+        0.0,
+        0.5, // top center
+      ]);
+
       const buffer = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
       gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
 
-      const pos = gl.getAttribLocation(program, "position");
-      gl.vertexAttribPointer(pos, 2, gl.FLOAT, false, 0, 0);
-      gl.enableVertexAttribArray(pos);
+      // Get the attribute location using the correct name 'a_position'
+      const positionLocation = gl.getAttribLocation(program, "a_position");
+      if (positionLocation === -1) {
+        throw new Error("Could not find attribute 'a_position'");
+      }
+
+      gl.enableVertexAttribArray(positionLocation);
+      gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
 
       // Clear and draw
-      gl.clearColor(0, 0, 0, 1);
+      gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+      gl.clearColor(0.0, 0.0, 0.0, 1.0);
       gl.clear(gl.COLOR_BUFFER_BIT);
-      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      gl.drawArrays(gl.TRIANGLES, 0, 3);
     } catch (err) {
+      console.error("Shader error:", err);
       setError("Failed to render shader: " + err.message);
     }
   };
@@ -132,7 +150,7 @@ function TextToShader() {
         body: JSON.stringify({ prompt }),
       });
       const data = await res.json();
-
+      console.log("data====>", data);
       if (data.success && data.shader_code) {
         // Parse the shader_code string as JSON
         const shaders = JSON.parse(data.shader_code);

@@ -1,58 +1,91 @@
 defmodule ShaderApi.LLM do
-  @ollama_api_url "http://localhost:11434/api/generate"
+  @mistral_api_url "https://api.mistral.ai/v1/chat/completions"
   # 30 seconds timeout
   @request_timeout 30_000
 
   def generate_shader(prompt) do
-    headers = [{"Content-Type", "application/json"}]
+    headers = [
+      {"Content-Type", "application/json"},
+      {"Accept", "application/json"},
+      {"Authorization", "Bearer #{get_api_key()}"}
+    ]
 
     body = %{
-      model: "mistral:latest",
-      format: "json",
-      stream: false,
-      prompt: """
-      You are a WebGL shader expert. Generate only the shader code without any explanation.
-      The response should be valid GLSL code that can be directly used in WebGL.
-      The shader should implement the following: #{prompt}
-      Only return the shader code, no explanations or markdown formatting.
-      Return both vertex and fragment shaders.
-      Format the response as valid GLSL code only.
-      """
+      model: "mistral-large-latest",
+      messages: [
+        %{
+          role: "system",
+          content: """
+          You are a WebGL shader expert. You must respond with only valid GLSL shader code.
+          Format your response as a JSON object with two fields: vertexShader and fragmentShader.
+          Always use these attribute names in vertex shader:
+          - a_position for position attribute
+          - a_normal for normal attribute (if needed)
+          - a_color for color attribute (if needed)
+          - a_texCoord for texture coordinates (if needed)
+          Do not include any explanations or markdown formatting.
+          """
+        },
+        %{
+          role: "user",
+          content: "Generate WebGL shaders for: #{prompt}"
+        }
+      ]
     }
 
-    case HTTPoison.post(@ollama_api_url, Jason.encode!(body), headers,
+    case HTTPoison.post(@mistral_api_url, Jason.encode!(body), headers,
            timeout: @request_timeout,
            recv_timeout: @request_timeout
          ) do
       {:ok, %HTTPoison.Response{status_code: 200, body: response_body}} ->
         case Jason.decode(response_body) do
-          {:ok, %{"response" => shader_code}} ->
-            # Clean up the response to ensure we only get the shader code
-            clean_shader =
-              shader_code
-              |> String.trim()
-              |> String.replace(~r/```glsl\n?/, "")
-              |> String.replace(~r/```\n?/, "")
-              |> String.trim()
+          {:ok, %{"choices" => [%{"message" => %{"content" => content}} | _]}} ->
+            # Extract the JSON content from the markdown code block
+            case Regex.run(~r/```json\n(.*)\n```/s, content) do
+              [_, json_content] ->
+                case Jason.decode(json_content) do
+                  {:ok, %{"vertexShader" => vertex, "fragmentShader" => fragment}} ->
+                    {:ok,
+                     Jason.encode!(%{
+                       vertexShader: cleanup_shader(vertex),
+                       fragmentShader: cleanup_shader(fragment)
+                     })}
 
-            {:ok, clean_shader}
+                  error ->
+                    {:error, "Invalid shader format in response: #{inspect(error)}"}
+                end
+
+              _ ->
+                {:error, "Could not extract JSON content from response"}
+            end
 
           error ->
-            {:error, "Failed to decode Ollama response: #{inspect(error)}"}
+            {:error, "Failed to decode Mistral response: #{inspect(error)}"}
         end
 
       {:ok, %HTTPoison.Response{status_code: status_code, body: body}} ->
-        {:error, "Ollama API returned status #{status_code}: #{body}"}
+        {:error, "Mistral API returned status #{status_code}: #{body}"}
 
       {:error, %HTTPoison.Error{reason: :timeout}} ->
-        {:error,
-         "Request to Ollama timed out. Make sure Ollama is running locally with 'ollama serve' and the Mistral model is pulled with 'ollama pull mistral'"}
-
-      {:error, %HTTPoison.Error{reason: :econnrefused}} ->
-        {:error, "Connection refused. Make sure Ollama is running locally with 'ollama serve'"}
+        {:error, "Request to Mistral API timed out"}
 
       {:error, %HTTPoison.Error{reason: reason}} ->
-        {:error, "Failed to call Ollama API: #{inspect(reason)}"}
+        {:error, "Failed to call Mistral API: #{inspect(reason)}"}
     end
+  end
+
+  defp cleanup_shader(shader) do
+    shader
+    |> String.trim()
+    # Convert literal \n to actual newlines
+    |> String.replace(~r/\\n/, "\n")
+    # Remove any remaining backticks
+    |> String.replace("`", "")
+    |> String.trim()
+  end
+
+  defp get_api_key do
+    Application.get_env(:shader_api, :mistral_api_key) ||
+      raise "MISTRAL_API_KEY environment variable is not set!"
   end
 end
